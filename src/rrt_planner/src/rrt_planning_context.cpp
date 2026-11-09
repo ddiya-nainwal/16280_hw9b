@@ -1,9 +1,9 @@
-#include <moveit/planning_interface/planning_interface.h>
-#include <moveit/planning_scene/planning_scene.h>
-#include <moveit/robot_trajectory/robot_trajectory.h>
-#include <moveit/robot_state/robot_state.h>
-#include <moveit/robot_state/conversions.h>
-#include <moveit/kinematic_constraints/utils.h>
+#include <moveit/planning_interface/planning_interface.hpp>
+#include <moveit/planning_scene/planning_scene.hpp>
+#include <moveit/robot_trajectory/robot_trajectory.hpp>
+#include <moveit/robot_state/robot_state.hpp>
+#include <moveit/robot_state/conversions.hpp>
+#include <moveit/kinematic_constraints/utils.hpp>
 
 #include <random>
 #include <limits>
@@ -34,6 +34,8 @@ public:
 
   bool terminate() override { return false; }
   void clear() override {}
+  
+  //included early returns where there were error messages to make sure that the program doesn't run incorrectly
 
   void solve(planning_interface::MotionPlanResponse& res) override
   {
@@ -43,6 +45,7 @@ public:
     if (!jmg)
     {
       res.error_code.val = moveit_msgs::msg::MoveItErrorCodes::INVALID_GROUP_NAME;
+      return; 
     }
 
     moveit::core::RobotState start_state = scene_->getCurrentState();
@@ -58,6 +61,7 @@ public:
         request_.goal_constraints[0].joint_constraints.empty())
     {
       res.error_code.val = moveit_msgs::msg::MoveItErrorCodes::INVALID_GOAL_CONSTRAINTS;
+      return; 
     }
 
     const auto& var_names = jmg->getVariableNames();
@@ -131,10 +135,12 @@ public:
     if (!collisionFreeState(q_start))
     {
       res.error_code.val = moveit_msgs::msg::MoveItErrorCodes::START_STATE_IN_COLLISION;
+      return; 
     }
     if (!collisionFreeState(q_goal))
     {
       res.error_code.val = moveit_msgs::msg::MoveItErrorCodes::GOAL_IN_COLLISION;
+      return; 
     }
 
     std::vector<Node> tree;
@@ -150,22 +156,36 @@ public:
       std::vector<double> q_rand(q_start.size());
       if (uni01(rng) < goal_bias)
       {
-        // Random sample should be goal configuration
+        q_rand = q_goal; // Random sample should be goal configuration; just setting random sample equal to goal 
       }
       else
       {
+        //this part samples uniformly within joint bounds 
         for (size_t i = 0; i < q_rand.size() && i < var_count; ++i)
         {
           const auto& b = v_bounds[i];
-          // Finish implementation of random sample
+          q_rand[i] = uni01(rng) * (b.max_position_ - b.min_position_) + b.min_position_; //samples within bounds by scaling random value by the min/max 
+
         }
       }
-      clampToBounds(q_rand);
+      clampToBounds(q_rand); //ensures sample is valid 
 
       // TODO: Find the nearest node in the tree to q_rand
       // HINT: Use dist() to find closest node
       //       Store the index of the nearest node in variable 'nn'
-      int nn = 0; 
+      int nn = 0; //sets variable that will hold value of nearest node 
+      double best = std::numeric_limits<double>::max(); //setting best to largest possible  
+      double d = 0;   //setting d = to arbitrary value (will be updated with the actual distance in the loop)
+      for (size_t i = 0; i < tree.size(); ++i) //looping through each node in the tree 
+        {
+         d = dist(tree[i].q, q_rand); //gets the distance between the node's config to q_rand
+         if (d < best) //updating with each loop to get min value 
+         {
+          best = d; //updating value with smallest value
+          nn = i; //updating index
+         }
+        } 
+    
 
       // Steer from nearest node toward q_rand by at most distance 'step'
       std::vector<double> q_new(q_start.size());
@@ -185,19 +205,31 @@ public:
       // HINT: Use collisionFreeSegment(tree[nn].q, q_new)
       //       If in collision, skip to next iteration with 'continue'
 
+      if (!collisionFreeSegment(tree[nn].q, q_new)){
+        continue; //checking if path is collision free
+      }
+
       // TODO: Add q_new to the tree with parent nn
       // HINT: tree.push_back(Node{q_new, nn});
       //       Store the new node's index for the next check
+      tree.push_back(Node{q_new, nn});  //adding q_new to tree with parent nn
+      int curr_idx = tree.size() - 1; //updating index to last index in tree
 
       // TODO: Check if q_new is close enough to q_goal
       // HINT: If dist(q_new, q_goal) < goal_thresh AND
       //       collisionFreeSegment(q_new, q_goal) is collision-free,
       //       then add q_goal to tree and set goal_idx, then break
+      if (((dist(q_new, q_goal)) < goal_thresh) && collisionFreeSegment(q_new, q_goal)){ //checking that distance < goal_thresh and collisionfreeseg
+        tree.push_back(Node{q_goal, curr_idx});  //adding q_goal to tree by creating new node struct and setting its fields 
+        goal_idx = tree.size() - 1; //goal_idx is new size of tree - 1
+        break; 
+      }
     }
 
     if (goal_idx < 0)
     {
       res.error_code.val = moveit_msgs::msg::MoveItErrorCodes::PLANNING_FAILED;
+      return; 
     }
 
     // TODO: Reconstruct the path from start to goal
@@ -205,6 +237,13 @@ public:
     //       Store configurations in 'path', then reverse it
     std::vector<std::vector<double>> path;
     
+    int j = goal_idx; //setting j equal to goal_idx so we can follow parent pointers
+    while (j > -1){ //while loop because we don't know how many iterations we need 
+      path.push_back(tree[j].q);  //adding the node to the tree (reconstructing path)
+      j = tree[j].parent; //updating j to follow parent pointers (not stored in tree)
+    }
+    std::reverse(path.begin(), path.end()); //reversing path
+
 
     moveit::core::RobotState st(start_state);
     robot_trajectory::RobotTrajectory traj(model_, jmg);

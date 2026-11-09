@@ -1,6 +1,6 @@
 #include <rrt_planner/rrt_planner_manager.hpp>
-#include <moveit/planning_interface/planning_interface.h>
-#include <moveit/robot_model/robot_model.h>
+#include <moveit/planning_interface/planning_interface.hpp>
+#include <moveit/robot_model/robot_model.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <pluginlib/class_list_macros.hpp>
 #include "rrt_planning_context.cpp"

@@ -14,15 +14,18 @@ def generate_launch_description():
     rrt_pipeline_params = {
         "planning_pipelines": ["rrt"],
         "rrt": {
-            "planning_plugin": "RrtPlannerPlugin/RrtPlannerManager",
-            "request_adapters": (
-                "default_planner_request_adapters/FixWorkspaceBounds "
-                "default_planner_request_adapters/FixStartStateBounds "
-                "default_planner_request_adapters/FixStartStateCollision "
-                "default_planner_request_adapters/FixStartStatePathConstraints "
-                "default_planner_request_adapters/ResolveConstraintFrames "
-                "default_planner_request_adapters/AddTimeOptimalParameterization"
-            ),
+            "planning_plugins": ["RrtPlannerPlugin/RrtPlannerManager"],
+            "request_adapters": [
+                "default_planning_request_adapters/ResolveConstraintFrames",
+                "default_planning_request_adapters/ValidateWorkspaceBounds",
+                "default_planning_request_adapters/CheckStartStateBounds",
+                "default_planning_request_adapters/CheckStartStateCollision",
+            ],
+            "response_adapters": [
+                "default_planning_response_adapters/AddTimeOptimalParameterization",
+                "default_planning_response_adapters/ValidateSolution",
+                "default_planning_response_adapters/DisplayMotionPath"
+            ],
         },
     }
 
@@ -68,13 +71,13 @@ def generate_launch_description():
         package="controller_manager",
         executable="ros2_control_node",
         parameters=[
-            moveit_config.robot_description,
             os.path.join(
                 get_package_share_directory("moveit_resources_panda_moveit_config"),
                 "config",
                 "ros2_controllers.yaml",
             ),
         ],
+        remappings=[("/controller_manager/robot_description", "/robot_description")],
         output="screen",
     )
 
